@@ -1,9 +1,12 @@
 [package]
-name = "quick-fea"
-version = "0.1.0"
 authors = ["Luke Minnich <squareman2357@gmail.com>"]
 edition = "2018"
+name = "quick_fea"
+version = "0.1.0"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+nalgebra = {version = "0.22"}
+serde = {version = "1.0", features = ["derive"]}
+wasm-bindgen = {version = "0.2", features = ["serde-serialize"]}
