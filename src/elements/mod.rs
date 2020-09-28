@@ -1,20 +1,20 @@
-use crate::types::*;
-use na::{ArrayStorage, Matrix, Matrix2, Matrix4, Vector2, Vector4, U12};
+use crate::types::frame::FrameElement;
+use na::{Matrix2, Matrix4, MatrixN, Vector2, Vector4, U12};
 
 #[rustfmt::skip]
-pub fn euler_bernoulli_element_stiffness_matrix(element: &FrameElement) -> Matrix<f64, U12, U12, ArrayStorage<f64, U12, U12>>{
+#[allow(non_snake_case)]
+pub fn euler_bernoulli_element_stiffness_matrix(element: &FrameElement) -> MatrixN<f64, U12> {
 
-    let section = element.geometry.cross_section;
-    let material = element.material;
+    let section = &element.geometry.cross_section;
+    let material = &element.material;
 
-    let L = element.geometry.length;
+    let L = element.length_or_inf();
     let L2 = L * L;
-    let L3 = L * L * L;
 
     let (A, Iy, Iz, J) = (section.A, section.Iy, section.Iz, section.J);
     let (E, G) = (material.E, material.G);
 
-    let mut m = Matrix::<f64, U12, U12, ArrayStorage<f64, U12, U12>>::zeros();
+    let mut m = MatrixN::<f64, U12>::zeros();
 
     // Axial
     m[(0, 0)] =  A;
@@ -75,88 +75,87 @@ pub fn euler_bernoulli_element_stiffness_matrix(element: &FrameElement) -> Matri
 }
 
 #[rustfmt::skip]
-pub fn frame_element_stiffness_matrix(
-    element: &FrameElement
-) -> Matrix<f64, U12, U12, ArrayStorage<f64, U12, U12>> {
+#[allow(non_snake_case)]
+pub fn frame_element_stiffness_matrix(element: &FrameElement) -> MatrixN<f64, U12> {
 
-    let section = element.geometry.cross_section;
-    let material = element.material;
+    let section = &element.geometry.cross_section;
+    let material = &element.material;
 
-    let L = element.geometry.length;
+    let L = element.length_or_inf();
     let L2 = L * L;
 
     let (A, Iy, Iz, J) = (section.A, section.Iy, section.Iz, section.J);
     let (E, G) = (material.E, material.G);
 
-    let mut m = Matrix::<f64, U12, U12, ArrayStorage<f64, U12, U12>>::zeros();
+    let mut m = MatrixN::<f64, U12>::zeros();
 
     // Axial
-    let mut index_map = Vector2::new(0, 6);
+    let index_map = Vector2::new(0, 6);
     let stiffness_matrix = E * A / L * Matrix2::new( 1., -1.,
                                                     -1.,  1.);
     let axial_action = SingleActionStiffnessMatrix2by2 { index_map, stiffness_matrix };
-    merge_single_action_into_complete_U2(&axial_action, &mut m);
+    merge_single_action_into_complete_2by2(&axial_action, &mut m);
 
     // Torsion
-    let mut index_map = Vector2::new(3, 9);
+    let index_map = Vector2::new(3, 9);
     let stiffness_matrix = G * J / L * Matrix2::new( 1., -1.,
                                                     -1.,  1.);
     let axial_action = SingleActionStiffnessMatrix2by2 { index_map, stiffness_matrix };
-    merge_single_action_into_complete_U2(&axial_action, &mut m);
+    merge_single_action_into_complete_2by2(&axial_action, &mut m);
 
     // Bending About Z
-    let mut index_map = Vector4::new(1, 5, 7, 11);
+    let index_map = Vector4::new(1, 5, 7, 11);
     let stiffness_matrix = E * Iz / L * Matrix4::new( 12. / L2,  6. / L, -12. / L2,  6. / L,
                                                        6. / L ,  4.    ,  -6. / L ,  2.    ,
                                                      -12. / L2, -6. / L,  12. / L2, -6. / L,
                                                        6. / L ,  2.    ,  -6. / L ,  4.    );
     let axial_action = SingleActionStiffnessMatrix4by4 { index_map, stiffness_matrix };
-    merge_single_action_into_complete_U4(&axial_action, &mut m);
+    merge_single_action_into_complete_4by4(&axial_action, &mut m);
 
 
     // Bending About Y
-    let mut index_map = Vector4::new(2, 4, 8, 10);
+    let index_map = Vector4::new(2, 4, 8, 10);
     let stiffness_matrix = E * Iy / L * Matrix4::new( 12. / L2, -6. / L, -12. / L2,  -6. / L,
                                                       -6. / L ,  4.    ,   6. / L ,   2.    ,
                                                      -12. / L2,  6. / L,  12. / L2,   6. / L,
                                                       -6. / L ,  2.    ,   6. / L ,   4.    );
     let axial_action = SingleActionStiffnessMatrix4by4 { index_map, stiffness_matrix };
-    merge_single_action_into_complete_U4(&axial_action, &mut m);
+    merge_single_action_into_complete_4by4(&axial_action, &mut m);
     
     m
 }
 
-pub fn frame_element_with_shear_deformation_stiffness_matrix(
-    element: &FrameElement
-) -> Matrix<f64, U12, U12, ArrayStorage<f64, U12, U12>> {
+#[rustfmt::skip]
+#[allow(non_snake_case)]
+pub fn frame_element_with_shear_deformation_stiffness_matrix(element: &FrameElement) -> MatrixN<f64, U12> {
 
-    let section = element.geometry.cross_section;
-    let material = element.material;
+    let section = &element.geometry.cross_section;
+    let material = &element.material;
 
-    let L = element.geometry.length;
+    let L = element.length_or_inf();
     let L2 = L * L;
 
     let (A, Avy, Avz, Iy, Iz, J) = (section.A, section.Avy, section.Avz, section.Iy, section.Iz, section.J);
     let (E, G) = (material.E, material.G);
 
-    let mut m = Matrix::<f64, U12, U12, ArrayStorage<f64, U12, U12>>::zeros();
+    let mut m = MatrixN::<f64, U12>::zeros();
 
     // Axial
-    let mut index_map = Vector2::new(0, 6);
+    let index_map = Vector2::new(0, 6);
     let stiffness_matrix = E * A / L * Matrix2::new( 1., -1.,
                                                     -1.,  1.);
     let axial_action = SingleActionStiffnessMatrix2by2 { index_map, stiffness_matrix };
-    merge_single_action_into_complete_U2(&axial_action, &mut m);
+    merge_single_action_into_complete_2by2(&axial_action, &mut m);
 
     // Torsion
-    let mut index_map = Vector2::new(3, 9);
+    let index_map = Vector2::new(3, 9);
     let stiffness_matrix = G * J / L * Matrix2::new( 1., -1.,
                                                     -1.,  1.);
     let axial_action = SingleActionStiffnessMatrix2by2 { index_map, stiffness_matrix };
-    merge_single_action_into_complete_U2(&axial_action, &mut m);
+    merge_single_action_into_complete_2by2(&axial_action, &mut m);
 
     // Bending About Z
-    let mut index_map = Vector4::new(7, 11, 1, 5);
+    let index_map = Vector4::new(7, 11, 1, 5);
     let eta = E * Iz / Avy / G;
     let stiffness_matrix = E * Iz / L / (L2 / 12. + eta) * Matrix4::new(     1.,       -L / 2.,     -1.,       -L / 2.,
                                                                         -L / 2., L2 / 3. + eta,  L / 2., L2 / 6. - eta,
@@ -164,11 +163,11 @@ pub fn frame_element_with_shear_deformation_stiffness_matrix(
                                                                         -L / 2., L2 / 6. - eta,  L / 2., L2 / 3. + eta);
 
     let axial_action = SingleActionStiffnessMatrix4by4 { index_map, stiffness_matrix };
-    merge_single_action_into_complete_U4(&axial_action, &mut m);
+    merge_single_action_into_complete_4by4(&axial_action, &mut m);
 
 
     // Bending About Y
-    let mut index_map = Vector4::new(8, 10, 2, 4);
+    let index_map = Vector4::new(8, 10, 2, 4);
     let eta = E * Iy / Avz / G;
     let stiffness_matrix = E * Iy / L / (L2 / 12. + eta) * Matrix4::new(     1.,        L / 2.,     -1.,        L / 2.,
                                                                          L / 2., L2 / 3. + eta, -L / 2., L2 / 6. - eta,
@@ -176,14 +175,14 @@ pub fn frame_element_with_shear_deformation_stiffness_matrix(
                                                                          L / 2., L2 / 6. - eta, -L / 2., L2 / 3. + eta);
 
     let axial_action = SingleActionStiffnessMatrix4by4 { index_map, stiffness_matrix };
-    merge_single_action_into_complete_U4(&axial_action, &mut m);
+    merge_single_action_into_complete_4by4(&axial_action, &mut m);
     
     m
 }
 
-fn merge_single_action_into_complete_U2(
+fn merge_single_action_into_complete_2by2(
     single: &SingleActionStiffnessMatrix2by2,
-    complete: &mut Matrix<f64, U12, U12, ArrayStorage<f64, U12, U12>>,
+    complete: &mut MatrixN<f64, U12>,
 ) {
     let map = single.index_map;
     let source = single.stiffness_matrix;
@@ -196,9 +195,9 @@ fn merge_single_action_into_complete_U2(
     }
 }
 
-fn merge_single_action_into_complete_U4(
+fn merge_single_action_into_complete_4by4(
     single: &SingleActionStiffnessMatrix4by4,
-    complete: &mut Matrix<f64, U12, U12, ArrayStorage<f64, U12, U12>>,
+    complete: &mut MatrixN<f64, U12>,
 ) {
     let map = single.index_map;
     let source = single.stiffness_matrix;
