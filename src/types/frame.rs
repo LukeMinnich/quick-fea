@@ -84,6 +84,7 @@ impl FrameEndReleases {
     }
 }
 
+#[derive(PartialEq, Eq)]
 pub enum FrameEndRelease {
     Fixed,
     Free,
