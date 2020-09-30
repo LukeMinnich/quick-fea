@@ -3,15 +3,15 @@ use na::{Matrix, Matrix3, MatrixN, Vector3, U12};
 // pub fn frame_element_stiff_matrix(element: )
 
 /**
- * Returns the transformation matrix __Γ__ to go from world to local vectors (force, displacement, stiffness)
+ * Returns the transformation matrix __Γ__ to go from world to local coordinates (force, displacement, stiffness)
  *
  * The 12x12 world-to-local transformation matrix takes the form of
- * ```
+ *
  * γ 0 0 0
  * 0 γ 0 0
  * 0 0 γ 0
  * 0 0 0 γ
- * ```
+ *
  * where __γ__ is the 3x3 world-to-local rotation transform matrix
  * and __0__ is the 3x3 zero matrix
  *
@@ -20,7 +20,7 @@ use na::{Matrix, Matrix3, MatrixN, Vector3, U12};
  * `local_axes` - A 3x3 matrix with each of the member local x, y, and z axes as column vectors
  *
  */
-pub fn world_to_local_force_transform(local_axes: &Matrix3<f64>) -> MatrixN<f64, U12> {
+pub fn world_to_local_transform(local_axes: &Matrix3<f64>) -> MatrixN<f64, U12> {
     let rotation: Matrix3<f64> = world_to_local_rotation(&local_axes);
 
     let mut transform = MatrixN::<f64, U12>::zeros();

@@ -1,4 +1,5 @@
 use crate::types::frame::FrameElement;
+use crate::utils::ZERO_EPSILON;
 use crate::{ANALYSIS_DATA, ELEMENT_DATA};
 use na::{MatrixN, U12};
 use std::collections::HashMap;
@@ -35,20 +36,26 @@ pub fn solve_for_deflections(
  * and combined in correspondence to the world degrees of freedom.
  */
 pub fn assemble_world_stiffness_matrix() -> Result<HashMap<(usize, usize), f64>, String> {
-    let mut assembled = HashMap::<(usize, usize), f64>::new();
-
-    for frame in (&ELEMENT_DATA.frames).values() {
-        merge_stiffness_matrix_at_frame_dofs(&mut assembled, &frame)?;
-    }
-
-    Ok(assembled)
+    ELEMENT_DATA
+        .read()
+        .unwrap()
+        .frames
+        .values()
+        .try_fold(HashMap::<(usize, usize), f64>::new(), |acc, x| {
+            merge_stiffness_matrix_at_frame_dofs(acc, x)
+        })
 }
 
 fn merge_stiffness_matrix_at_frame_dofs(
-    assembled: &mut HashMap<(usize, usize), f64>,
+    mut assembled: HashMap<(usize, usize), f64>,
     frame: &FrameElement,
-) -> Result<(), String> {
-    let stiffness: MatrixN<f64, U12> = match ANALYSIS_DATA.frame_stiffnesses.get(&frame.id) {
+) -> Result<HashMap<(usize, usize), f64>, String> {
+    let stiffness: MatrixN<f64, U12> = match ANALYSIS_DATA
+        .read()
+        .unwrap()
+        .frame_stiffnesses
+        .get(&frame.id)
+    {
         Some(x) => x.world,
         None => return Err(format!("Failed to locate frame with id = {}", &frame.id)),
     };
@@ -62,20 +69,26 @@ fn merge_stiffness_matrix_at_frame_dofs(
         None => return Err(format!("Failed to find node id = {}", &frame.end_node_id)),
     };
 
-    for i in 1..6 {
-        for j in 1..12 {
+    for i in 0..6 {
+        println!("i = {}", i);
+        for j in 0..12 {
+            // Ignore very small values
+            if abs_diff_eq!(0., stiffness[(i, j)], epsilon = ZERO_EPSILON) {
+                continue;
+            }
+
             if j < 6 {
-                merge_stiffness_matrix_at_dof(
+                assembled = merge_stiffness_matrix_at_dof(
                     assembled,
                     start_dofs[i],
                     start_dofs[j],
                     stiffness[(i, j)],
                 )
             } else {
-                merge_stiffness_matrix_at_dof(
+                assembled = merge_stiffness_matrix_at_dof(
                     assembled,
                     start_dofs[i],
-                    end_dofs[j],
+                    end_dofs[j - 6],
                     stiffness[(i, j)],
                 )
             }
@@ -83,37 +96,42 @@ fn merge_stiffness_matrix_at_frame_dofs(
     }
 
     for i in 6..12 {
-        for j in 1..12 {
+        for j in 0..12 {
+            // Ignore very small values
+            if abs_diff_eq!(0., stiffness[(i, j)], epsilon = ZERO_EPSILON) {
+                continue;
+            }
             if j < 6 {
-                merge_stiffness_matrix_at_dof(
+                assembled = merge_stiffness_matrix_at_dof(
                     assembled,
-                    end_dofs[i],
+                    end_dofs[i - 6],
                     start_dofs[j],
                     stiffness[(i, j)],
                 )
             } else {
-                merge_stiffness_matrix_at_dof(
+                assembled = merge_stiffness_matrix_at_dof(
                     assembled,
-                    end_dofs[i],
-                    end_dofs[j],
+                    end_dofs[i - 6],
+                    end_dofs[j - 6],
                     stiffness[(i, j)],
                 )
             }
         }
     }
 
-    Ok(())
+    Ok(assembled)
 }
 
 fn merge_stiffness_matrix_at_dof(
-    assembled: &mut HashMap<(usize, usize), f64>,
+    mut assembled: HashMap<(usize, usize), f64>,
     row: usize,
     column: usize,
     value: f64,
-) {
+) -> HashMap<(usize, usize), f64> {
     if let Some(val) = assembled.get_mut(&(row, column)) {
         *val += value;
     } else {
         assembled.insert((row, column), value);
     }
+    assembled
 }

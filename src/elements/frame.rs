@@ -1,79 +1,20 @@
 use crate::types::frame::{FrameElement, FrameEndRelease, FrameEndReleases};
-use na::{Matrix2, Matrix4, MatrixN, Vector2, Vector4, U12};
+use crate::utils::transform::world_to_local_transform;
+use na::*;
 
-#[rustfmt::skip]
-#[allow(non_snake_case)]
-pub fn euler_bernoulli_element_stiffness_matrix(element: &FrameElement) -> MatrixN<f64, U12> {
-
-    let section = &element.geometry.cross_section;
-    let material = &element.material;
-
-    let L = element.length_or_inf();
-    let L2 = L * L;
-
-    let (A, Iy, Iz, J) = (section.A, section.Iy, section.Iz, section.J);
-    let (E, G) = (material.E, material.G);
-
-    let mut m = MatrixN::<f64, U12>::zeros();
-
-    // Axial
-    m[(0, 0)] =  A;
-    m[(0, 6)] = -A;
-    m[(6, 0)] = -A;
-    m[(6, 6)] =  A;
-
-    // Torsion
-    m[(3, 3)] =  G * J / E;
-    m[(3, 9)] = -G * J / E;
-    m[(9, 3)] = -G * J / E;
-    m[(9, 9)] =  G * J / E;
-
-    // Bending About Z
-    m[(1, 1)] =  12. * Iz / L2;
-    m[(1, 7)] = -12. * Iz / L2;
-    m[(7, 1)] = -12. * Iz / L2;
-    m[(7, 7)] =  12. * Iz / L2;
-
-    m[(1, 5)]  =  6. * Iz / L;
-    m[(1, 11)] =  6. * Iz / L;
-    m[(7, 5)]  = -6. * Iz / L;
-    m[(7, 11)] = -6. * Iz / L;
-
-    m[(5, 1)]  =  6. * Iz / L;
-    m[(5, 7)]  = -6. * Iz / L;
-    m[(11, 1)] =  6. * Iz / L;
-    m[(11, 7)] = -6. * Iz / L;
-    
-    m[(5, 5)]   = 4. * Iz;
-    m[(5, 11)]  = 2. * Iz;
-    m[(11, 5)]  = 2. * Iz;
-    m[(11, 11)] = 4. * Iz;
-
-    // Bending About Y
-    m[(2, 2)] =  12. * Iy / L2;
-    m[(2, 8)] = -12. * Iy / L2;
-    m[(8, 2)] = -12. * Iy / L2;
-    m[(8, 8)] =  12. * Iy / L2;
-
-    m[(2, 4)]  = -6. * Iy / L;
-    m[(2, 10)] = -6. * Iy / L;
-    m[(8, 4)]  =  6. * Iy / L;
-    m[(8, 10)] =  6. * Iy / L;
-    
-    m[(4, 2)]  = -6. * Iy / L;
-    m[(4, 8)]  =  6. * Iy / L;
-    m[(10, 2)] = -6. * Iy / L;
-    m[(10, 8)] =  6. * Iy / L;
-
-    m[(4, 4)]   =  4. * Iy;
-    m[(4, 10)]  =  2. * Iy;
-    m[(10, 4)]  =  2. * Iy;
-    m[(10, 10)] =  4. * Iy;
-
-    apply_end_releases(&mut m, element);
-
-    // Result must include matrix coefficients
-    E / L * m
+pub fn transform_frame_local_to_world(
+    frame: &FrameElement,
+    m: &MatrixN<f64, U12>,
+) -> MatrixN<f64, U12> {
+    let transform = world_to_local_transform(&frame.geometry.local_axes);
+    transform.transpose() * m
+}
+pub fn transform_frame_world_to_local(
+    frame: &FrameElement,
+    m: &MatrixN<f64, U12>,
+) -> MatrixN<f64, U12> {
+    let transform = world_to_local_transform(&frame.geometry.local_axes);
+    transform * m
 }
 
 #[rustfmt::skip]
@@ -314,4 +255,354 @@ struct SingleActionStiffnessMatrix2by2 {
 struct SingleActionStiffnessMatrix4by4 {
     index_map: Vector4<usize>,
     stiffness_matrix: Matrix4<f64>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::types::frame::*;
+    use crate::types::material::*;
+    use crate::types::node::*;
+    use crate::utils::ZERO_EPSILON;
+    use crate::*;
+
+    fn assert_matrix_symmetric_12by12(m: &MatrixN<f64, U12>) {
+        for i in 0..12 {
+            for j in 0..12 {
+                assert_relative_eq!(m[(i, j)], m[(j, i)], max_relative = 1e-12);
+            }
+        }
+    }
+
+    fn assert_matrix_symmetric_18by18(m: &MatrixN<f64, U18>) {
+        for i in 0..18 {
+            for j in 0..18 {
+                assert_relative_eq!(m[(i, j)], m[(j, i)], max_relative = 1e-12);
+            }
+        }
+    }
+
+    mod mcguire_matrix_structural_analysis_2nd_edition {
+        use super::*;
+
+        pub fn example_4_8_init() {
+            let material = IsotropicMaterial::new(200., 0.3);
+            add_node(Node {
+                id: "a".to_string(),
+                degrees_of_freedom: Vector6::from_iterator(0..6),
+                coordinate: Point3::new(0., 0., 0.),
+            });
+            add_node(Node {
+                id: "b".to_string(),
+                degrees_of_freedom: Vector6::from_iterator(6..12),
+                coordinate: Point3::new(8e3, 0., 0.),
+            });
+            add_node(Node {
+                id: "c".to_string(),
+                degrees_of_freedom: Vector6::from_iterator(12..18),
+                coordinate: Point3::new(13e3, 0., 0.),
+            });
+            add_frame_element(FrameElement {
+                id: "ab".to_string(),
+                start_node_id: "a".to_string(),
+                end_node_id: "b".to_string(),
+                start_releases: FrameEndReleases::fully_fixed(),
+                end_releases: FrameEndReleases::fully_fixed(),
+                geometry: FrameGeometry {
+                    cross_section: CrossSection {
+                        A: 6e3,
+                        Avy: 0.,
+                        Avz: 0.,
+                        J: 300e3,
+                        Iy: 0.,
+                        Iz: 200e6,
+                    },
+                    local_axes: Matrix3::identity(),
+                },
+                material: material.clone(),
+            });
+            add_frame_element(FrameElement {
+                id: "bc".to_string(),
+                start_node_id: "b".to_string(),
+                end_node_id: "c".to_string(),
+                start_releases: FrameEndReleases::fully_fixed(),
+                end_releases: FrameEndReleases::fully_fixed(),
+                geometry: FrameGeometry {
+                    cross_section: CrossSection {
+                        A: 4e3,
+                        Avy: 0.,
+                        Avz: 0.,
+                        J: 100e3,
+                        Iy: 0.,
+                        Iz: 50e6,
+                    },
+                    local_axes: Matrix3::identity(),
+                },
+                material: material.clone(),
+            });
+        }
+
+        #[test]
+        pub fn example_4_8_part_1() {
+            example_4_8_init();
+
+            let member_ab = match get_frame_element_by_id("ab") {
+                Some(x) => x,
+                None => panic!(),
+            };
+            let member_bc = match get_frame_element_by_id("bc") {
+                Some(x) => x,
+                None => panic!(),
+            };
+            let local_ab = frame_element_stiffness_matrix(&member_ab) / 200.;
+            let local_bc = frame_element_stiffness_matrix(&member_bc) / 200.;
+
+            // Member ab
+
+            // diagonals
+            assert_relative_eq!(local_ab[(0, 0)], 0.750, max_relative = 1e-3);
+            assert_relative_eq!(local_ab[(1, 1)], 0.00469, max_relative = 1e-3);
+            assert_relative_eq!(local_ab[(3, 3)], 14.423, max_relative = 1e-3);
+            assert_relative_eq!(local_ab[(5, 5)], 1e5, max_relative = 1e-3);
+            assert_relative_eq!(local_ab[(6, 6)], 0.750, max_relative = 1e-3);
+            assert_relative_eq!(local_ab[(7, 7)], 0.00469, max_relative = 1e-3);
+            assert_relative_eq!(local_ab[(9, 9)], 14.423, max_relative = 1e-3);
+            assert_relative_eq!(local_ab[(11, 11)], 1e5, max_relative = 1e-3);
+
+            // off-diagonal non-zeros
+            assert_relative_eq!(local_ab[(0, 6)], -0.75, max_relative = 1e-3);
+            assert_relative_eq!(local_ab[(1, 5)], 18.75, max_relative = 1e-3);
+            assert_relative_eq!(local_ab[(1, 7)], -0.00469, max_relative = 1e-3);
+            assert_relative_eq!(local_ab[(1, 5)], 18.75, max_relative = 1e-3);
+            assert_relative_eq!(local_ab[(3, 9)], -14.423, max_relative = 1e-3);
+            assert_relative_eq!(local_ab[(5, 7)], -18.75, max_relative = 1e-3);
+            assert_relative_eq!(local_ab[(5, 11)], 0.5e5, max_relative = 1e-3);
+            assert_relative_eq!(local_ab[(7, 11)], -18.75, max_relative = 1e-3);
+            // row 0 zeros
+            assert_abs_diff_eq!(local_ab[(0, 1)], 0., epsilon = ZERO_EPSILON);
+            assert_abs_diff_eq!(local_ab[(0, 3)], 0., epsilon = ZERO_EPSILON);
+            assert_abs_diff_eq!(local_ab[(0, 5)], 0., epsilon = ZERO_EPSILON);
+            assert_abs_diff_eq!(local_ab[(0, 7)], 0., epsilon = ZERO_EPSILON);
+            assert_abs_diff_eq!(local_ab[(0, 9)], 0., epsilon = ZERO_EPSILON);
+            assert_abs_diff_eq!(local_ab[(0, 11)], 0., epsilon = ZERO_EPSILON);
+
+            // row 1 zeros
+            assert_abs_diff_eq!(local_ab[(1, 3)], 0., epsilon = ZERO_EPSILON);
+            assert_abs_diff_eq!(local_ab[(1, 6)], 0., epsilon = ZERO_EPSILON);
+            assert_abs_diff_eq!(local_ab[(1, 9)], 0., epsilon = ZERO_EPSILON);
+
+            // row 3 zeros
+            assert_abs_diff_eq!(local_ab[(3, 5)], 0., epsilon = ZERO_EPSILON);
+            assert_abs_diff_eq!(local_ab[(3, 6)], 0., epsilon = ZERO_EPSILON);
+            assert_abs_diff_eq!(local_ab[(3, 7)], 0., epsilon = ZERO_EPSILON);
+            assert_abs_diff_eq!(local_ab[(3, 11)], 0., epsilon = ZERO_EPSILON);
+
+            // row 5 zeros
+            assert_abs_diff_eq!(local_ab[(5, 6)], 0., epsilon = ZERO_EPSILON);
+            assert_abs_diff_eq!(local_ab[(5, 9)], 0., epsilon = ZERO_EPSILON);
+            // row 6 zeros
+            assert_abs_diff_eq!(local_ab[(6, 7)], 0., epsilon = ZERO_EPSILON);
+            assert_abs_diff_eq!(local_ab[(6, 9)], 0., epsilon = ZERO_EPSILON);
+            assert_abs_diff_eq!(local_ab[(6, 11)], 0., epsilon = ZERO_EPSILON);
+
+            // row 7 zeros
+            assert_abs_diff_eq!(local_ab[(7, 9)], 0., epsilon = ZERO_EPSILON);
+
+            // row 9 zeros
+            assert_abs_diff_eq!(local_ab[(9, 11)], 0., epsilon = ZERO_EPSILON);
+
+            assert_matrix_symmetric_12by12(&local_ab);
+
+            // Member bc
+
+            // diagonals
+            assert_relative_eq!(local_bc[(0, 0)], 0.8, max_relative = 1e-3);
+            assert_relative_eq!(local_bc[(1, 1)], 0.0048, max_relative = 1e-3);
+            assert_relative_eq!(local_bc[(3, 3)], 7.692, max_relative = 1e-3);
+            assert_relative_eq!(local_bc[(5, 5)], 0.4e5, max_relative = 1e-3);
+            assert_relative_eq!(local_bc[(6, 6)], 0.8, max_relative = 1e-3);
+            assert_relative_eq!(local_bc[(7, 7)], 0.0048, max_relative = 1e-3);
+            assert_relative_eq!(local_bc[(9, 9)], 7.692, max_relative = 1e-3);
+            assert_relative_eq!(local_bc[(11, 11)], 0.4e5, max_relative = 1e-3);
+
+            // off-diagonal non-zeros
+            assert_relative_eq!(local_bc[(0, 6)], -0.8, max_relative = 1e-3);
+            assert_relative_eq!(local_bc[(1, 5)], 12., max_relative = 1e-3);
+            assert_relative_eq!(local_bc[(1, 7)], -0.0048, max_relative = 1e-3);
+            assert_relative_eq!(local_bc[(1, 5)], 12., max_relative = 1e-3);
+            assert_relative_eq!(local_bc[(3, 9)], -7.692, max_relative = 1e-3);
+            assert_relative_eq!(local_bc[(5, 7)], -12., max_relative = 1e-3);
+            assert_relative_eq!(local_bc[(5, 11)], 0.2e5, max_relative = 1e-3);
+            assert_relative_eq!(local_bc[(7, 11)], -12., max_relative = 1e-3);
+
+            // row 0 zeros
+            assert_abs_diff_eq!(local_bc[(0, 1)], 0., epsilon = ZERO_EPSILON);
+            assert_abs_diff_eq!(local_bc[(0, 3)], 0., epsilon = ZERO_EPSILON);
+            assert_abs_diff_eq!(local_bc[(0, 5)], 0., epsilon = ZERO_EPSILON);
+            assert_abs_diff_eq!(local_bc[(0, 7)], 0., epsilon = ZERO_EPSILON);
+            assert_abs_diff_eq!(local_bc[(0, 9)], 0., epsilon = ZERO_EPSILON);
+            assert_abs_diff_eq!(local_bc[(0, 11)], 0., epsilon = ZERO_EPSILON);
+
+            // row 1 zeros
+            assert_abs_diff_eq!(local_bc[(1, 3)], 0., epsilon = ZERO_EPSILON);
+            assert_abs_diff_eq!(local_bc[(1, 6)], 0., epsilon = ZERO_EPSILON);
+            assert_abs_diff_eq!(local_bc[(1, 9)], 0., epsilon = ZERO_EPSILON);
+
+            // row 3 zeros
+            assert_abs_diff_eq!(local_bc[(3, 5)], 0., epsilon = ZERO_EPSILON);
+            assert_abs_diff_eq!(local_bc[(3, 6)], 0., epsilon = ZERO_EPSILON);
+            assert_abs_diff_eq!(local_bc[(3, 7)], 0., epsilon = ZERO_EPSILON);
+            assert_abs_diff_eq!(local_bc[(3, 11)], 0., epsilon = ZERO_EPSILON);
+
+            // row 5 zeros
+            assert_abs_diff_eq!(local_bc[(5, 6)], 0., epsilon = ZERO_EPSILON);
+            assert_abs_diff_eq!(local_bc[(5, 9)], 0., epsilon = ZERO_EPSILON);
+            // row 6 zeros
+            assert_abs_diff_eq!(local_bc[(6, 7)], 0., epsilon = ZERO_EPSILON);
+            assert_abs_diff_eq!(local_bc[(6, 9)], 0., epsilon = ZERO_EPSILON);
+            assert_abs_diff_eq!(local_bc[(6, 11)], 0., epsilon = ZERO_EPSILON);
+
+            // row 7 zeros
+            assert_abs_diff_eq!(local_bc[(7, 9)], 0., epsilon = ZERO_EPSILON);
+
+            // row 9 zeros
+            assert_abs_diff_eq!(local_bc[(9, 11)], 0., epsilon = ZERO_EPSILON);
+
+            assert_matrix_symmetric_12by12(&local_bc);
+        }
+
+        #[test]
+        pub fn example_4_8_part_2() {
+            example_4_8_init();
+            let member_ab = match get_frame_element_by_id("ab") {
+                Some(x) => x,
+                None => panic!(),
+            };
+            let member_bc = match get_frame_element_by_id("bc") {
+                Some(x) => x,
+                None => panic!(),
+            };
+
+            let local_ab = frame_element_stiffness_matrix(&member_ab) / 200.;
+            let local_bc = frame_element_stiffness_matrix(&member_bc) / 200.;
+            let world_ab = transform_frame_local_to_world(&member_ab, &local_ab);
+            let world_bc = transform_frame_local_to_world(&member_bc, &local_bc);
+            update_frame_element_stiffness(&member_ab, local_ab, world_ab);
+            update_frame_element_stiffness(&member_bc, local_bc, world_bc);
+
+            if let Ok(world) = analysis::assemble_world_stiffness_matrix() {
+                assert_eq!(world.len(), 42); // The answer to life, the universe, and everything!
+
+                let mut world_matrix = MatrixN::<f64, U18>::zeros();
+                for (key, val) in world.iter() {
+                    world_matrix[(key.0, key.1)] = *val;
+                }
+
+                // diagonals
+                assert_relative_eq!(world_matrix[(0, 0)], 0.75, max_relative = 1e-3);
+                assert_relative_eq!(world_matrix[(1, 1)], 0.00469, max_relative = 1e-3);
+                assert_relative_eq!(world_matrix[(3, 3)], 14.423, max_relative = 1e-3);
+                assert_relative_eq!(world_matrix[(5, 5)], 1e5, max_relative = 1e-3);
+                assert_relative_eq!(world_matrix[(6, 6)], 1.55, max_relative = 1e-3);
+                assert_relative_eq!(world_matrix[(7, 7)], 0.00949, max_relative = 1e-3);
+                assert_relative_eq!(world_matrix[(9, 9)], 22.115, max_relative = 1e-3);
+                assert_relative_eq!(world_matrix[(11, 11)], 1.4e5, max_relative = 1e-3);
+                assert_relative_eq!(world_matrix[(12, 12)], 0.8, max_relative = 1e-3);
+                assert_relative_eq!(world_matrix[(13, 13)], 0.0048, max_relative = 1e-3);
+                assert_relative_eq!(world_matrix[(15, 15)], 7.692, max_relative = 1e-3);
+                assert_relative_eq!(world_matrix[(17, 17)], 0.4e5, max_relative = 1e-3);
+                // off-diagonal non-zeros
+                assert_relative_eq!(world_matrix[(0, 6)], -0.75, max_relative = 1e-3);
+                assert_relative_eq!(world_matrix[(1, 5)], 18.75, max_relative = 1e-3);
+                assert_relative_eq!(world_matrix[(1, 7)], -0.00469, max_relative = 1e-3);
+                assert_relative_eq!(world_matrix[(1, 11)], 18.75, max_relative = 1e-3);
+                assert_relative_eq!(world_matrix[(3, 9)], -14.423, max_relative = 1e-3);
+                assert_relative_eq!(world_matrix[(5, 7)], -18.75, max_relative = 1e-3);
+                assert_relative_eq!(world_matrix[(5, 11)], 0.5e5, max_relative = 1e-3);
+                assert_relative_eq!(world_matrix[(6, 12)], -0.8, max_relative = 1e-3);
+                assert_relative_eq!(world_matrix[(7, 11)], -6.75, max_relative = 1e-3);
+                assert_relative_eq!(world_matrix[(7, 13)], -0.0048, max_relative = 1e-3);
+                assert_relative_eq!(world_matrix[(7, 17)], 12., max_relative = 1e-3);
+                assert_relative_eq!(world_matrix[(9, 15)], -7.692, max_relative = 1e-3);
+                assert_relative_eq!(world_matrix[(11, 13)], -12., max_relative = 1e-3);
+                assert_relative_eq!(world_matrix[(11, 17)], 0.2e5, max_relative = 1e-3);
+                assert_relative_eq!(world_matrix[(13, 17)], -12., max_relative = 1e-3);
+
+                // row 0 zeros
+                assert_abs_diff_eq!(world_matrix[(0, 1)], 0., epsilon = ZERO_EPSILON);
+                assert_abs_diff_eq!(world_matrix[(0, 3)], 0., epsilon = ZERO_EPSILON);
+                assert_abs_diff_eq!(world_matrix[(0, 5)], 0., epsilon = ZERO_EPSILON);
+                assert_abs_diff_eq!(world_matrix[(0, 7)], 0., epsilon = ZERO_EPSILON);
+                assert_abs_diff_eq!(world_matrix[(0, 9)], 0., epsilon = ZERO_EPSILON);
+                assert_abs_diff_eq!(world_matrix[(0, 11)], 0., epsilon = ZERO_EPSILON);
+                assert_abs_diff_eq!(world_matrix[(0, 12)], 0., epsilon = ZERO_EPSILON);
+                assert_abs_diff_eq!(world_matrix[(0, 13)], 0., epsilon = ZERO_EPSILON);
+                assert_abs_diff_eq!(world_matrix[(0, 15)], 0., epsilon = ZERO_EPSILON);
+                assert_abs_diff_eq!(world_matrix[(0, 17)], 0., epsilon = ZERO_EPSILON);
+
+                // row 1 zeros
+                assert_abs_diff_eq!(world_matrix[(1, 3)], 0., epsilon = ZERO_EPSILON);
+                assert_abs_diff_eq!(world_matrix[(1, 6)], 0., epsilon = ZERO_EPSILON);
+                assert_abs_diff_eq!(world_matrix[(1, 9)], 0., epsilon = ZERO_EPSILON);
+                assert_abs_diff_eq!(world_matrix[(1, 12)], 0., epsilon = ZERO_EPSILON);
+                assert_abs_diff_eq!(world_matrix[(1, 13)], 0., epsilon = ZERO_EPSILON);
+                assert_abs_diff_eq!(world_matrix[(1, 15)], 0., epsilon = ZERO_EPSILON);
+                assert_abs_diff_eq!(world_matrix[(1, 17)], 0., epsilon = ZERO_EPSILON);
+
+                // row 3 zeros
+                assert_abs_diff_eq!(world_matrix[(3, 5)], 0., epsilon = ZERO_EPSILON);
+                assert_abs_diff_eq!(world_matrix[(3, 6)], 0., epsilon = ZERO_EPSILON);
+                assert_abs_diff_eq!(world_matrix[(3, 7)], 0., epsilon = ZERO_EPSILON);
+                assert_abs_diff_eq!(world_matrix[(3, 11)], 0., epsilon = ZERO_EPSILON);
+                assert_abs_diff_eq!(world_matrix[(3, 12)], 0., epsilon = ZERO_EPSILON);
+                assert_abs_diff_eq!(world_matrix[(3, 13)], 0., epsilon = ZERO_EPSILON);
+                assert_abs_diff_eq!(world_matrix[(3, 15)], 0., epsilon = ZERO_EPSILON);
+                assert_abs_diff_eq!(world_matrix[(3, 17)], 0., epsilon = ZERO_EPSILON);
+
+                // row 5 zeros
+                assert_abs_diff_eq!(world_matrix[(5, 6)], 0., epsilon = ZERO_EPSILON);
+                assert_abs_diff_eq!(world_matrix[(5, 9)], 0., epsilon = ZERO_EPSILON);
+                assert_abs_diff_eq!(world_matrix[(5, 12)], 0., epsilon = ZERO_EPSILON);
+                assert_abs_diff_eq!(world_matrix[(5, 13)], 0., epsilon = ZERO_EPSILON);
+                assert_abs_diff_eq!(world_matrix[(5, 15)], 0., epsilon = ZERO_EPSILON);
+                assert_abs_diff_eq!(world_matrix[(5, 17)], 0., epsilon = ZERO_EPSILON);
+
+                // row 6 zeros
+                assert_abs_diff_eq!(world_matrix[(6, 7)], 0., epsilon = ZERO_EPSILON);
+                assert_abs_diff_eq!(world_matrix[(6, 9)], 0., epsilon = ZERO_EPSILON);
+                assert_abs_diff_eq!(world_matrix[(6, 11)], 0., epsilon = ZERO_EPSILON);
+                assert_abs_diff_eq!(world_matrix[(6, 13)], 0., epsilon = ZERO_EPSILON);
+                assert_abs_diff_eq!(world_matrix[(6, 15)], 0., epsilon = ZERO_EPSILON);
+                assert_abs_diff_eq!(world_matrix[(6, 17)], 0., epsilon = ZERO_EPSILON);
+
+                // row 7 zeros
+                assert_abs_diff_eq!(world_matrix[(7, 9)], 0., epsilon = ZERO_EPSILON);
+                assert_abs_diff_eq!(world_matrix[(7, 12)], 0., epsilon = ZERO_EPSILON);
+                assert_abs_diff_eq!(world_matrix[(7, 15)], 0., epsilon = ZERO_EPSILON);
+
+                // row 9 zeros
+                assert_abs_diff_eq!(world_matrix[(9, 11)], 0., epsilon = ZERO_EPSILON);
+                assert_abs_diff_eq!(world_matrix[(9, 12)], 0., epsilon = ZERO_EPSILON);
+                assert_abs_diff_eq!(world_matrix[(9, 13)], 0., epsilon = ZERO_EPSILON);
+                assert_abs_diff_eq!(world_matrix[(9, 17)], 0., epsilon = ZERO_EPSILON);
+
+                // row 11 zeros
+                assert_abs_diff_eq!(world_matrix[(11, 12)], 0., epsilon = ZERO_EPSILON);
+                assert_abs_diff_eq!(world_matrix[(11, 15)], 0., epsilon = ZERO_EPSILON);
+
+                // row 12 zeros
+                assert_abs_diff_eq!(world_matrix[(12, 13)], 0., epsilon = ZERO_EPSILON);
+                assert_abs_diff_eq!(world_matrix[(12, 15)], 0., epsilon = ZERO_EPSILON);
+                assert_abs_diff_eq!(world_matrix[(12, 17)], 0., epsilon = ZERO_EPSILON);
+
+                // row 13 zeros
+                assert_abs_diff_eq!(world_matrix[(13, 15)], 0., epsilon = ZERO_EPSILON);
+
+                // row 15 zeros
+                assert_abs_diff_eq!(world_matrix[(15, 17)], 0., epsilon = ZERO_EPSILON);
+
+                assert_matrix_symmetric_18by18(&world_matrix);
+            }
+        }
+    }
 }

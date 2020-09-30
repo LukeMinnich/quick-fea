@@ -1,3 +1,4 @@
+#[derive(Clone)]
 #[allow(non_snake_case)]
 pub struct IsotropicMaterial {
     pub E: f64,

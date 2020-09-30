@@ -1,8 +1,9 @@
 use crate::types::material::*;
 use crate::types::node::*;
-use crate::ELEMENT_DATA;
+use crate::*;
 use na::{Matrix3, MatrixN, Point3, U12};
 
+#[derive(Clone)]
 pub struct FrameElement {
     pub id: String,
     pub start_node_id: String,
@@ -28,14 +29,15 @@ impl FrameElement {
         let end: Point3<f64> = self.end_node()?.coordinate;
         Some(na::distance(&start, &end))
     }
-    pub fn start_node(&self) -> Option<&Node> {
-        ELEMENT_DATA.nodes.get(&self.start_node_id)
+    pub fn start_node(&self) -> Option<Node> {
+        get_node_by_id(&self.start_node_id)
     }
-    pub fn end_node(&self) -> Option<&Node> {
-        ELEMENT_DATA.nodes.get(&self.end_node_id)
+    pub fn end_node(&self) -> Option<Node> {
+        get_node_by_id(&self.end_node_id)
     }
 }
 
+#[derive(Clone)]
 pub struct FrameGeometry {
     pub local_axes: Matrix3<f64>,
     pub cross_section: CrossSection,
@@ -51,6 +53,7 @@ impl FrameGeometry {
     }
 }
 
+#[derive(Clone)]
 #[allow(non_snake_case)]
 pub struct FrameEndReleases {
     pub A: FrameEndRelease,
@@ -61,8 +64,9 @@ pub struct FrameEndReleases {
     pub Mz: FrameEndRelease,
 }
 
+#[allow(dead_code)]
 impl FrameEndReleases {
-    const fn fully_fixed() -> FrameEndReleases {
+    pub const fn fully_fixed() -> FrameEndReleases {
         FrameEndReleases {
             A: FrameEndRelease::Fixed,
             Vy: FrameEndRelease::Fixed,
@@ -72,7 +76,7 @@ impl FrameEndReleases {
             Mz: FrameEndRelease::Fixed,
         }
     }
-    const fn pinned() -> FrameEndReleases {
+    pub const fn pinned() -> FrameEndReleases {
         FrameEndReleases {
             A: FrameEndRelease::Fixed,
             Vy: FrameEndRelease::Fixed,
@@ -84,12 +88,13 @@ impl FrameEndReleases {
     }
 }
 
-#[derive(PartialEq, Eq)]
+#[derive(PartialEq, Eq, Clone)]
 pub enum FrameEndRelease {
     Fixed,
     Free,
 }
 
+#[derive(Clone)]
 #[allow(non_snake_case)]
 pub struct CrossSection {
     pub A: f64,
