@@ -1,3 +1,5 @@
+![GitHub Workflow Status (branch)](https://img.shields.io/github/workflow/status/LukeMinnich/quick-fea/build-master/master)
+
 # quick-fea
 A modern finite element library for structural analysis written entirely in Rust
 
