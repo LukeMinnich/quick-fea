@@ -282,6 +282,14 @@ mod tests {
         }
     }
 
+    fn assert_matrrices_equal_12by12(m_a: &MatrixN<f64, U12>, m_b: &MatrixN<f64, U12>) {
+        for i in 0..12 {
+            for j in 0..12 {
+                assert_relative_eq!(m_a[(i, j)], m_b[(j, i)], max_relative = 1e-12);
+            }
+        }
+    }
+
     mod mcguire_matrix_structural_analysis_2nd_edition {
         use super::*;
 
@@ -603,6 +611,76 @@ mod tests {
 
                 assert_matrix_symmetric_18by18(&world_matrix);
             }
+        }
+        #[test]
+        pub fn frame_element_with_shear_deformation_matches_without_when_shear_area_large() {
+            let material = IsotropicMaterial::new(200., 0.3);
+            add_node(Node {
+                id: "a".to_string(),
+                degrees_of_freedom: Vector6::from_iterator(0..6),
+                coordinate: Point3::new(0., 0., 0.),
+            });
+            add_node(Node {
+                id: "b".to_string(),
+                degrees_of_freedom: Vector6::from_iterator(6..12),
+                coordinate: Point3::new(8e3, 0., 0.),
+            });
+            add_node(Node {
+                id: "c".to_string(),
+                degrees_of_freedom: Vector6::from_iterator(12..18),
+                coordinate: Point3::new(16e3, 0., 0.),
+            });
+            add_frame_element(FrameElement {
+                id: "ab".to_string(),
+                start_node_id: "a".to_string(),
+                end_node_id: "b".to_string(),
+                start_releases: FrameEndReleases::fully_fixed(),
+                end_releases: FrameEndReleases::fully_fixed(),
+                geometry: FrameGeometry {
+                    cross_section: CrossSection {
+                        A: 6e3,
+                        Avy: f64::INFINITY,
+                        Avz: f64::INFINITY,
+                        J: 300e3,
+                        Iy: 0.,
+                        Iz: 200e6,
+                    },
+                    local_axes: Matrix3::identity(),
+                },
+                material: material.clone(),
+            });
+            add_frame_element(FrameElement {
+                id: "bc".to_string(),
+                start_node_id: "b".to_string(),
+                end_node_id: "c".to_string(),
+                start_releases: FrameEndReleases::fully_fixed(),
+                end_releases: FrameEndReleases::fully_fixed(),
+                geometry: FrameGeometry {
+                    cross_section: CrossSection {
+                        A: 6e3,
+                        Avy: 0.,
+                        Avz: 0.,
+                        J: 300e3,
+                        Iy: 0.,
+                        Iz: 200e6,
+                    },
+                    local_axes: Matrix3::identity(),
+                },
+                material: material.clone(),
+            });
+            let member_ab = match get_frame_element_by_id("ab") {
+                Some(x) => x,
+                None => panic!(),
+            };
+            let member_bc = match get_frame_element_by_id("bc") {
+                Some(x) => x,
+                None => panic!(),
+            };
+
+            let local_ab = frame_element_with_shear_deformation_stiffness_matrix(&member_ab) / 200.;
+            let local_bc = frame_element_stiffness_matrix(&member_bc) / 200.;
+
+            assert_matrrices_equal_12by12(&local_ab, &local_bc);
         }
     }
 }
