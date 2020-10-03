@@ -1,4 +1,4 @@
-use crate::types::frame::{FrameElement, FrameEndRelease, FrameEndReleases};
+use crate::models::frame::{FrameElement, FrameEndRelease, FrameEndReleases};
 use crate::utils::transform::world_to_local_transform;
 use na::*;
 
@@ -260,9 +260,9 @@ struct SingleActionStiffnessMatrix4by4 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::frame::*;
-    use crate::types::material::*;
-    use crate::types::node::*;
+    use crate::models::frame::*;
+    use crate::models::material::*;
+    use crate::models::node::*;
     use crate::utils::ZERO_EPSILON;
     use crate::*;
 

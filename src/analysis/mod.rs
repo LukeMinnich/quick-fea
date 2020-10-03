@@ -1,4 +1,4 @@
-use crate::types::frame::FrameElement;
+use crate::models::frame::FrameElement;
 use crate::utils::ZERO_EPSILON;
 use crate::{ANALYSIS_DATA, ELEMENT_DATA};
 use na::{MatrixN, U12};

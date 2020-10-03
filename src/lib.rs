@@ -10,11 +10,12 @@ extern crate lazy_static;
 
 pub mod analysis;
 pub mod elements;
+pub mod models;
 pub mod types;
 pub mod utils;
 
-use crate::types::frame::{FrameElement, FrameStiffness};
-use crate::types::node::Node;
+use crate::models::frame::{FrameElement, FrameStiffness};
+use crate::models::node::Node;
 use std::collections::HashMap;
 use std::sync::RwLock;
 

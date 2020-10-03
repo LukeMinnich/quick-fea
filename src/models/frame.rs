@@ -1,5 +1,5 @@
-use crate::types::material::*;
-use crate::types::node::*;
+use crate::models::material::*;
+use crate::models::node::*;
 use crate::*;
 use na::{Matrix3, MatrixN, Point3, U12};
 
