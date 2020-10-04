@@ -1,17 +1,15 @@
 extern crate nalgebra as na;
+extern crate quick_fea_types as types;
 extern crate serde;
 extern crate wasm_bindgen;
 #[macro_use]
 extern crate approx;
-// #[macro_use]
-// extern crate derive_new;
 #[macro_use]
 extern crate lazy_static;
 
 pub mod analysis;
 pub mod elements;
 pub mod models;
-pub mod types;
 pub mod utils;
 
 use crate::models::frame::{FrameElement, FrameStiffness};
