@@ -17,6 +17,18 @@ use crate::models::node::Node;
 use std::collections::HashMap;
 use std::sync::RwLock;
 
+use wasm_bindgen::prelude::*;
+
+#[wasm_bindgen]
+extern {
+    pub fn alert(s: &str);
+}
+
+#[wasm_bindgen]
+pub fn greet(name: &str) {
+    alert(&format!("Hello, {}!", name));
+}
+
 lazy_static! {
     static ref ANALYSIS_DATA: RwLock<AnalysisData> = RwLock::new(AnalysisData::new());
     static ref ELEMENT_DATA: RwLock<ElementData> = RwLock::new(ElementData::new());

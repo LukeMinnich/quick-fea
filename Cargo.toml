@@ -1,10 +1,14 @@
 [package]
 authors = ["Luke Minnich <squareman2357@gmail.com>"]
+description = "A modern finite element library for structural analysis written entirely in Rust"
 edition = "2018"
+license = "MIT"
 name = "quick-fea"
+repository = "https://github.com/LukeMinnich/quick-fea.git"
 version = "0.1.0"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[lib]
+crate-type = ["cdylib"]
 
 [dependencies]
 approx = {version = "0.3.2"}
