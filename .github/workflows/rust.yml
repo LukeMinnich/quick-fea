@@ -12,12 +12,12 @@ jobs:
     steps:
     - uses: actions/checkout@v2
 #     - run: rustup component add clippy
+    - name: Checkout submodules
+      uses: textbook/git-checkout-submodule-action@master
     - name: Build
       run: cargo build --verbose
     - name: Test
       run: cargo test --verbose
-    - name: Checkout submodules
-      uses: textbook/git-checkout-submodule-action@master
 #     - name: rust-clippy-check
 #       uses: actions-rs/clippy-check@v1.0.7
 #       with:
