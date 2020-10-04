@@ -19,6 +19,12 @@ use std::sync::RwLock;
 
 use wasm_bindgen::prelude::*;
 
+// When the `wee_alloc` feature is enabled, use `wee_alloc` as the global
+// allocator.
+#[cfg(feature = "wee_alloc")]
+#[global_allocator]
+static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
+
 #[wasm_bindgen]
 extern {
     pub fn alert(s: &str);
@@ -26,7 +32,7 @@ extern {
 
 #[wasm_bindgen]
 pub fn greet(name: &str) {
-    alert(&format!("Hello, {}!", name));
+    alert(&format!("Hello, you {}!", name));
 }
 
 lazy_static! {
